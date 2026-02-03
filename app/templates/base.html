@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foundry | AI Multimedia Platform</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <nav class="navbar">
+        <div class="logo">FOUNDRY <span class="pro-badge">PRO</span></div>
+        <div class="nav-links">
+            <a href="/" class="nav-item">HOME</a>
+            <a href="/create" class="nav-item">CREATE</a>
+            <a href="/gallery" class="nav-item">GALLERY</a>
+            <a href="/database" class="nav-item" style="color: #666;">DATABASE</a> </div>
+    </nav>
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <p>POWERED BY VEO 2.0 & ELEVENLABS // SYSTEM STATUS: <span style="color:#00ff9d">ONLINE</span></p>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

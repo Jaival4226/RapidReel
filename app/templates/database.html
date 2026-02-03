@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container" style="max-width: 1400px;">
+    <div class="page-header">
+        <h2>SYSTEM DATABASE</h2>
+        <div style="float: right;">
+            <button onclick="loadData()" class="btn-secondary" style="padding: 10px 20px; font-size: 0.8em;">REFRESH DATA</button>
+        </div>
+        <div class="divider"></div>
+    </div>
+
+    <div class="db-container">
+        <table class="cyber-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>TIMESTAMP</th>
+                    <th>STATUS</th>
+                    <th>STYLE</th>
+                    <th>VOICE</th>
+                    <th style="width: 30%;">PROMPT / MONOLOGUE</th>
+                    <th>OUTPUT</th>
+                </tr>
+            </thead>
+            <tbody id="db-body">
+                </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadData() {
+        const tbody = document.getElementById('db-body');
+        tbody.innerHTML = '<tr><td colspan="7" class="loading-text">ACCESSING MAINFRAME...</td></tr>';
+
+        try {
+            // Fetch 100 most recent records
+            const res = await fetch('/api/v1/tasks?limit=100');
+            const tasks = await res.json();
+            
+            tbody.innerHTML = ""; // Clear loading message
+
+            tasks.forEach(task => {
+                const date = new Date(task.created_at).toLocaleString();
+                const shortId = task.id.split('-')[0];
+                const voiceType = task.is_paid_voice ? '<span style="color:#ffd700">PAID</span>' : 'FREE';
+                const outputLink = task.final_output 
+                    ? `<a href="/videos/${task.final_output.split('/').pop()}" target="_blank" class="db-link">VIEW FILE</a>` 
+                    : '<span style="color:#555">N/A</span>';
+                
+                // Colorize Status
+                let statusColor = '#888';
+                if(task.status === 'COMPLETED') statusColor = '#00ff9d';
+                if(task.status === 'FAILED') statusColor = '#ff0055';
+                if(task.status === 'PROCESSING') statusColor = '#00f2ff';
+
+                const row = `
+                    <tr>
+                        <td class="mono">${shortId}</td>
+                        <td class="mono" style="font-size:0.8em; color:#888;">${date}</td>
+                        <td style="color:${statusColor}; font-weight:bold; font-size:0.8em;">${task.status}</td>
+                        <td>${task.style}</td>
+                        <td style="font-size:0.8em;">${voiceType}</td>
+                        <td>
+                            <div class="prompt-text"><strong>V:</strong> ${task.prompt}</div>
+                            <div class="prompt-text" style="color:#aaa; font-style:italic; margin-top:5px;"><strong>A:</strong> ${task.monologue || "N/A"}</div>
+                        </td>
+                        <td>${outputLink}</td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="7" style="color:red">CONNECTION ERROR</td></tr>';
+        }
+    }
+    
+    // Load on start
+    loadData();
+</script>
+{% endblock %}

@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h2>NEW PROJECT</h2>
+        <div class="divider"></div>
+    </div>
+
+    <div class="control-panel">
+        <div class="input-group full-width">
+            <label>1. VISUAL PROMPT (SCENE)</label>
+            <input type="text" id="promptInput" placeholder="A cyberpunk detective standing in neon rain...">
+        </div>
+
+        <div class="input-group full-width">
+            <label>2. BACKGROUND MONOLOGUE (SCRIPT)</label>
+            <textarea id="monologueInput" rows="3" placeholder="The rain never stops in this city..."></textarea>
+        </div>
+
+        <div class="settings-grid">
+            <div class="input-group">
+                <label>STYLE</label>
+                <select id="styleInput">
+                    <option value="cinematic">Cinematic</option>
+                    <option value="anime">Anime</option>
+                    <option value="photorealistic">Photorealistic</option>
+                    <option value="noir">Film Noir</option>
+                    <option value="cyberpunk">Cyberpunk</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>AUDIO ENGINE</label>
+                <select id="voiceInput">
+                    <option value="false">EdgeTTS (Free)</option>
+                    <option value="true">ElevenLabs (Paid)</option>
+                </select>
+            </div>
+        </div>
+
+        <button onclick="startGeneration()" id="genBtn" class="btn-generate">INITIALIZE GENERATION</button>
+    </div>
+
+    <div id="status-monitor" class="status-panel hidden">
+        <div class="status-header">SYSTEM LOG</div>
+        <div id="status-text" class="status-console">Waiting for input...</div>
+        <div class="progress-bar"><div id="progress-fill"></div></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const API_BASE = "/api/v1";
+
+    async function startGeneration() {
+        const prompt = document.getElementById('promptInput').value;
+        const monologue = document.getElementById('monologueInput').value;
+        const style = document.getElementById('styleInput').value;
+        const usePaid = document.getElementById('voiceInput').value === "true";
+        
+        const btn = document.getElementById('genBtn');
+        const monitor = document.getElementById('status-monitor');
+        const statusText = document.getElementById('status-text');
+
+        if (!prompt) return alert("Visual Prompt Required");
+
+        // UI Update
+        btn.disabled = true;
+        btn.innerText = "PROCESSING...";
+        monitor.classList.remove('hidden');
+        statusText.innerText = "> Uplinking to Server...";
+
+        try {
+            const res = await fetch(`${API_BASE}/generate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt, monologue, style, use_paid_voice: usePaid })
+            });
+            const data = await res.json();
+            pollStatus(data.task_id);
+        } catch (e) {
+            alert("Connection Failed");
+            btn.disabled = false;
+        }
+    }
+
+    async function pollStatus(taskId) {
+        const statusText = document.getElementById('status-text');
+        const interval = setInterval(async () => {
+            const res = await fetch(`${API_BASE}/tasks/${taskId}`);
+            const data = await res.json();
+            
+            statusText.innerText = `> TASK ${taskId.split('-')[0]}: ${data.status}`;
+
+            if (data.status.includes("COMPLETED")) {
+                clearInterval(interval);
+                statusText.innerText = "> GENERATION COMPLETE. REDIRECTING...";
+                setTimeout(() => window.location.href = "/gallery", 1500); // Auto-redirect to gallery
+            } else if (data.status === "FAILED") {
+                clearInterval(interval);
+                document.getElementById('genBtn').disabled = false;
+            }
+        }, 2000);
+    }
+</script>
+{% endblock %}

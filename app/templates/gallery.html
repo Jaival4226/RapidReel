@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h2>ARCHIVES</h2>
+        <div class="divider"></div>
+    </div>
+
+    <div class="gallery-grid" id="gallery-container">
+        <div class="loading-text">Loading Archives...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadGallery() {
+        const container = document.getElementById('gallery-container');
+        try {
+            const res = await fetch('/api/v1/tasks?limit=20');
+            const tasks = await res.json();
+            
+            container.innerHTML = "";
+            tasks.forEach(task => {
+                if (!task.final_output) return;
+                
+                const filename = task.final_output.split('/').pop();
+                const videoUrl = `/videos/${filename}`;
+                
+                const html = `
+                    <div class="video-card">
+                        <video controls preload="metadata">
+                            <source src="${videoUrl}" type="video/mp4">
+                        </video>
+                        <div class="card-meta">
+                            <div class="meta-prompt">${task.prompt}</div>
+                            <div class="meta-status status-${task.status}">${task.status}</div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += html;
+            });
+        } catch (e) {
+            container.innerHTML = "Error loading archives.";
+        }
+    }
+    loadGallery();
+</script>
+{% endblock %}
