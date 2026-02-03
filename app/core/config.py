@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Foundry Pro"
-    PROJECT_ID: str = "ai-media-startup"  # <--- REPLACE THIS
+    PROJECT_ID: str = "ai-media"  # <--- REPLACE THIS
     LOCATION: str = "us-central1"
     
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
