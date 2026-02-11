@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Foundry Pro"
-    PROJECT_ID: str = "ai-media"  # <--- REPLACE THIS
+    PROJECT_ID: str = "ai-media-startup"  # <--- REPLACE THIS
     LOCATION: str = "us-central1"
     
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
 
     # ⚠️ MASTER SWITCHES ⚠️
-    USE_MOCK_VEO: bool = True       # Set to False for Real Video
+    USE_MOCK_VEO: bool = False       # Set to False for Real Video
     USE_MOCK_AUDIO: bool = False    # Set to False for Real Audio
 
     VEO_MODEL: str = "veo-2.0-generate-001"
