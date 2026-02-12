@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "ai-media-startup",
+  "private_key_id": "3a1c33bdc93760ed872e18336152e043f5c7eeba",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDyRcZnuI3LSzs/\neHtColqgS4mHu0vWkUYUH3bofuvcu3FebIhrPMkR7Plgix4b6BcMkfq5m2Ome4sL\nr2OR4KAxsm8dxn+Ji0VnF0/VSzw8VPjeZa2RbOeCbSW82rKBp6vQyz5wmN/+agQx\naHUJU27ZrEuA64Pi9lHORPOPSNxE6jxPp9EIdyVy5Ekx7+GtjiGKqgEEX+Odhop0\nhi0R4+WoaJXO5N7sDRYf5EBNIrBTSmqdMQtRpywmrxT1tcjgqpR3VSCE1XWNuWDj\nSd1oDVNfmrUJS6GjU3gd+71AeYsbB/jaIDYQZ4X6Uw2iPxhcIOHfrA7urqShrpqi\n1ylbUIK9AgMBAAECggEAJTMC/ZKIDQ6yXHLEpEzW8vVeOt3OjXXVZ4oUQSsZzpTm\nWZv7D1IwQmUbPlBmEV1fyqGQeJbMJHgkN6lYtcGifzb5Wj5L/2PHxoY9DxBEAbR/\nWPCOR73Lx0o4iOigj4ld94t5fSLwA7mmBqsWC1ZI9zm+Bx/CaqMtGOmb5ySGE7uC\nB+tTOhKqJP9LyfQM9/JdqnTZQsAGQm07KogyVRiY46XFmhQiCpBb+YyBjb2rD/9H\nIjZwa8g61ASAqqhVfY/GzB0oI1vo0+x/I923MgcZgSASSyLNQmbhJ9vlkR9xICYG\nFvHlqjHdPGHylAxil8I3lYLD8x6GuYYLxy8gUtZ0+QKBgQD6ZWHOf/zVQvmllbyH\nXqFDEd1TRhXQy3PkQ22vhC7sqIxZeRd4YQbrytYS1c79cx6JuCSjS2GseYJ0G85Y\nCX1wKBCC4Of58BK7Hey6H4+GfhxD12VnE2kaSXvyhBYOWz8JSVjkQhoSLbvGExS4\nABy3XATknwK2SWoydezPsjv9yQKBgQD3sdm04QaV+otQKnEV9nxut4W58iEqSMI8\nd7i64f++BB+yekchMAhlko00gB4H6yjKX7azYsz0AKlDKBhSF5dFF6MyVr8rmO+t\nyCP3JPGXX8Cj2qfR4fNleaZ7dPVOHVtr9P0PPSOcbxLocBWu9cudu/Zzf+0c+2jM\nTYhL6S7HVQKBgCdoES54ggfmFHf0ysjbIbH2e8iBPSmw+zovSnHW8bOZCw2Buync\ny0QMlgg80eidV28BJfL1CBgmv1sajSzZwX4HMCII1zlEiQ4dtYXNNb9K1ZPvsCu6\nqE3Uxsbx9q6nuZHykyTJKmU2AVk444fZrKtGthZs1/ZsM2RhnrVJLZvRAoGBAKh1\nUPdvw6blCzKuatLhHKfAMTbRsjSr3054ri6L3f9Blr0v5IhxvoQ2M8rtB3+jM87P\nYdaG75VTjcqazk+ms77N4LQvwzzHetraL3u6qISnHsFRyKk53uu43L1CQkOqO68k\no6dlkX6nHFjxQg4IJT9Vwruy2XTIl/G7GWNnZ+UxAoGBAJTX7ObAobJ8WeD6672P\nn/+aJHPSUcYSiCID/GEaFm3IVSMV0mnk413fdl6PypNgGIg8fa6TaiNKENMwSc1Z\nVyi6Js33j+BycvSV0cVh4wrnle+HsuUZ6wB2rPnGPJJWymUR8tvIpGQm8gaztSL8\n0wba43z5Hm/YSlyKKDlpOv6E\n-----END PRIVATE KEY-----\n",
+  "client_email": "veo-runner@ai-media-startup.iam.gserviceaccount.com",
+  "client_id": "117408743769959608086",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/veo-runner%40ai-media-startup.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

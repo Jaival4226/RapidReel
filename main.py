@@ -1,4 +1,7 @@
 import uvicorn
+import os
+# Force Google SDK to use our new Robot User
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "veo-key.json"
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates

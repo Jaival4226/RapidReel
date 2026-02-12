@@ -1,29 +1,24 @@
+# app/core/config.py
 import os
-from pathlib import Path
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Foundry Pro"
-    PROJECT_ID: str = "ai-media-startup"  # <--- REPLACE THIS
-    LOCATION: str = "us-central1"
     
-    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
-    OUTPUT_DIR: Path = BASE_DIR / "local_storage" / "outputs"
-    TEMP_DIR: Path = BASE_DIR / "local_storage" / "temp"
+    # 🎨 LEONARDO AI SETTINGS
+    # Paste your key here inside the quotes!
+    LEONARDO_API_KEY: str = "00cc04d3-9d6d-484d-81e7-d025238300ed" 
+    
+    # ⚠️ MASTER SWITCHES
+    # Set this to False to use the real API!
+    USE_MOCK_VEO: bool = False       
+    USE_MOCK_AUDIO: bool = False    
 
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
+    # Storage Paths
+    BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    LOCAL_STORAGE: str = os.path.join(BASE_DIR, "..", "local_storage")
 
-    # ⚠️ MASTER SWITCHES ⚠️
-    USE_MOCK_VEO: bool = False       # Set to False for Real Video
-    USE_MOCK_AUDIO: bool = False    # Set to False for Real Audio
-
-    VEO_MODEL: str = "veo-2.0-generate-001"
-    GEMINI_MODEL: str = "gemini-2.0-flash"
-
-    def ensure_dirs(self):
-        self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        self.TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    class Config:
+        case_sensitive = True
 
 settings = Settings()
-settings.ensure_dirs()
