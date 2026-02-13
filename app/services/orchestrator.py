@@ -10,6 +10,7 @@ from app.providers.visual import visual_provider
 from app.db.models import Task
 from app.db.session import SessionLocal
 
+
 logger = logging.getLogger("Foundry.Orchestrator")
 
 class Orchestrator:
