@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     
     # --- API KEYS ---
     LEONARDO_API_KEY: str = "00cc04d3-9d6d-484d-81e7-d025238300ed"
-    KIE_API_KEY: str = "61b926761ea72259108666e13366cba9"  # <--- NEW KEY
+    KIE_API_KEY: str = "7fe66eedc8549ec0b7decd83e6ae2b1a"  # <--- NEW KEY
     
     # --- MASTER SWITCHES ---
     # Options: "kie" (Sora 2) or "leonardo" (Motion 2.0)
