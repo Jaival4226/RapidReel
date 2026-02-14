@@ -20,6 +20,10 @@ class Task(Base):
     video_path = Column(String, nullable=True) # Raw video
     audio_path = Column(String, nullable=True) # Raw audio
     final_output = Column(String, nullable=True) # Stitched Result
+
+    use_watermark = Column(Boolean, default=False)
+    use_intro = Column(Boolean, default=False)
+    use_outro = Column(Boolean, default=False)
     
     # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -1,107 +1,439 @@
-{% extends "base.html" %}
-
-{% block content %}
-<div class="container">
-    <div class="page-header">
-        <h2>NEW PROJECT</h2>
-        <div class="divider"></div>
-    </div>
-
-    <div class="control-panel">
-        <div class="input-group full-width">
-            <label>1. VISUAL PROMPT (SCENE)</label>
-            <input type="text" id="promptInput" placeholder="A cyberpunk detective standing in neon rain...">
-        </div>
-
-        <div class="input-group full-width">
-            <label>2. BACKGROUND MONOLOGUE (SCRIPT)</label>
-            <textarea id="monologueInput" rows="3" placeholder="The rain never stops in this city..."></textarea>
-        </div>
-
-        <div class="settings-grid">
-            <div class="input-group">
-                <label>STYLE</label>
-                <select id="styleInput">
-                    <option value="cinematic">Cinematic</option>
-                    <option value="anime">Anime</option>
-                    <option value="photorealistic">Photorealistic</option>
-                    <option value="noir">Film Noir</option>
-                    <option value="cyberpunk">Cyberpunk</option>
-                </select>
-            </div>
-            <div class="input-group">
-                <label>AUDIO ENGINE</label>
-                <select id="voiceInput">
-                    <option value="false">EdgeTTS (Free)</option>
-                    <option value="true">ElevenLabs (Paid)</option>
-                </select>
-            </div>
-        </div>
-
-        <button onclick="startGeneration()" id="genBtn" class="btn-generate">INITIALIZE GENERATION</button>
-    </div>
-
-    <div id="status-monitor" class="status-panel hidden">
-        <div class="status-header">SYSTEM LOG</div>
-        <div id="status-text" class="status-console">Waiting for input...</div>
-        <div class="progress-bar"><div id="progress-fill"></div></div>
-    </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-    const API_BASE = "/api/v1";
-
-    async function startGeneration() {
-        const prompt = document.getElementById('promptInput').value;
-        const monologue = document.getElementById('monologueInput').value;
-        const style = document.getElementById('styleInput').value;
-        const usePaid = document.getElementById('voiceInput').value === "true";
-        
-        const btn = document.getElementById('genBtn');
-        const monitor = document.getElementById('status-monitor');
-        const statusText = document.getElementById('status-text');
-
-        if (!prompt) return alert("Visual Prompt Required");
-
-        // UI Update
-        btn.disabled = true;
-        btn.innerText = "PROCESSING...";
-        monitor.classList.remove('hidden');
-        statusText.innerText = "> Uplinking to Server...";
-
-        try {
-            const res = await fetch(`${API_BASE}/generate`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ prompt, monologue, style, use_paid_voice: usePaid })
-            });
-            const data = await res.json();
-            pollStatus(data.task_id);
-        } catch (e) {
-            alert("Connection Failed");
-            btn.disabled = false;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foundry Pro | Create</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --surface: #ffffff;
+            --bg: #f8fafc;
+            --text: #1e293b;
+            --border: #e2e8f0;
         }
-    }
 
-    async function pollStatus(taskId) {
-        const statusText = document.getElementById('status-text');
-        const interval = setInterval(async () => {
-            const res = await fetch(`${API_BASE}/tasks/${taskId}`);
-            const data = await res.json();
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 32px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-item {
+            padding: 12px 16px;
+            border-radius: 8px;
+            color: #64748b;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-item.active {
+            background: #eff6ff;
+            color: var(--primary);
+        }
+
+        .nav-item:hover:not(.active) {
+            background: #f1f5f9;
+        }
+
+        /* Main Content */
+        .main {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+            display: flex;
+            gap: 40px;
+        }
+
+        .input-section {
+            flex: 1;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .preview-section {
+            flex: 1;
+            background: var(--surface);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+        }
+
+        /* Forms */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        textarea, input[type="text"] {
+            padding: 16px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.2s;
+        }
+
+        textarea:focus, input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        /* Brand Kit Section */
+        .brand-kit {
+            background: #f8fafc;
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .brand-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .brand-upload-item label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .brand-upload-item input {
+            font-size: 12px;
+            width: 100%;
+        }
+
+        .brand-toggles {
+            display: flex;
+            gap: 16px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+        }
+        
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* Buttons */
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-secondary {
+            background: #fff;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
+
+        /* Video Player */
+        video {
+            width: 100%;
+            border-radius: 8px;
+            background: #000;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #eff6ff;
+            color: var(--primary);
+        }
+        
+        #uploadStatus { font-size: 12px; margin-left: 10px; }
+
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="logo">⚡ Foundry Pro</div>
+        <a href="/create" class="nav-item active">✨ Create New</a>
+        <a href="/gallery" class="nav-item">📂 Gallery</a>
+        <a href="#" class="nav-item">⚙️ Settings</a>
+    </div>
+
+    <div class="main">
+        
+        <div class="input-section">
+            <h2>Create Video</h2>
+
+            <div class="form-group">
+                <label>Visual Prompt</label>
+                <textarea id="promptInput" rows="3" placeholder="Describe the scene (e.g., A cyberpunk city in rain...)"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Audio Script (Voiceover)</label>
+                <textarea id="audioInput" rows="3" placeholder="Enter the text to be spoken..."></textarea>
+            </div>
+
+            <div class="brand-kit">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <label style="font-size:14px; color:#2563eb;">🎨 Brand Kit Manager</label>
+                    <button class="btn-secondary" onclick="uploadBrandAssets()">💾 Save Assets</button>
+                </div>
+                
+                <div class="brand-grid">
+                    <div class="brand-upload-item">
+                        <label>Logo / Watermark (PNG)</label>
+                        <input type="file" id="fileWatermark" accept="image/png">
+                    </div>
+                    <div class="brand-upload-item">
+                        <label>Intro Video (MP4)</label>
+                        <input type="file" id="fileIntro" accept="video/mp4">
+                    </div>
+                    <div class="brand-upload-item">
+                        <label>Outro Video (MP4)</label>
+                        <input type="file" id="fileOutro" accept="video/mp4">
+                    </div>
+                    <div style="display:flex; align-items:flex-end;">
+                        <span id="uploadStatus"></span>
+                    </div>
+                </div>
+
+                <label style="font-size:12px; color:#64748b;">Apply to this video:</label>
+                <div class="brand-toggles">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="useWatermark" checked> Watermark
+                    </label>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="useIntro"> Intro
+                    </label>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="useOutro"> Outro
+                    </label>
+                </div>
+            </div>
+
+            <button class="btn-primary" onclick="generateVideo()" id="genBtn">
+                🚀 Generate Video
+            </button>
+        </div>
+
+        <div class="preview-section">
+            <div id="statusContainer" style="text-align: center; display: none;">
+                <div class="status-badge" id="statusBadge">PROCESSING</div>
+                <p id="statusText" style="margin-top: 16px; color: #64748b;">Initializing AI Agents...</p>
+            </div>
             
-            statusText.innerText = `> TASK ${taskId.split('-')[0]}: ${data.status}`;
+            <div id="videoContainer" style="width: 100%; display: none;">
+                <video id="resultVideo" controls></video>
+                <div style="margin-top: 16px; text-align: center;">
+                    <a id="downloadLink" href="#" class="btn-secondary" download>⬇️ Download Video</a>
+                </div>
+            </div>
 
-            if (data.status.includes("COMPLETED")) {
-                clearInterval(interval);
-                statusText.innerText = "> GENERATION COMPLETE. REDIRECTING...";
-                setTimeout(() => window.location.href = "/gallery", 1500); // Auto-redirect to gallery
-            } else if (data.status === "FAILED") {
-                clearInterval(interval);
-                document.getElementById('genBtn').disabled = false;
+            <div id="placeholder" style="text-align: center; color: #94a3b8;">
+                <div style="font-size: 48px; margin-bottom: 16px;">🎬</div>
+                <p>Your generated video will appear here</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- 1. HANDLE ASSET UPLOAD ---
+        async function uploadBrandAssets() {
+            const statusSpan = document.getElementById("uploadStatus");
+            statusSpan.innerText = "Uploading...";
+            statusSpan.style.color = "#2563eb"; // Blue
+
+            const formData = new FormData();
+            const fileWatermark = document.getElementById("fileWatermark").files[0];
+            const fileIntro = document.getElementById("fileIntro").files[0];
+            const fileOutro = document.getElementById("fileOutro").files[0];
+
+            if (fileWatermark) formData.append("watermark", fileWatermark);
+            if (fileIntro) formData.append("intro", fileIntro);
+            if (fileOutro) formData.append("outro", fileOutro);
+
+            if ([...formData.entries()].length === 0) {
+                statusSpan.innerText = "⚠️ Select a file first";
+                statusSpan.style.color = "#f59e0b"; // Orange
+                return;
             }
-        }, 2000);
-    }
-</script>
-{% endblock %}
+
+            try {
+                const res = await fetch('/api/v1/upload-assets', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (res.ok) {
+                    statusSpan.innerText = "✅ Assets Saved!";
+                    statusSpan.style.color = "#16a34a"; // Green
+                } else {
+                    throw new Error("Upload failed");
+                }
+            } catch (e) {
+                statusSpan.innerText = "❌ Error Uploading";
+                statusSpan.style.color = "#dc2626"; // Red
+            }
+        }
+
+        // --- 2. HANDLE GENERATION ---
+        async function generateVideo() {
+            const btn = document.getElementById("genBtn");
+            const prompt = document.getElementById("promptInput").value;
+            const monologue = document.getElementById("audioInput").value;
+            
+            if (!prompt) return alert("Please enter a prompt!");
+
+            // UI Updates
+            btn.disabled = true;
+            btn.innerText = "⏳ Generating...";
+            document.getElementById("placeholder").style.display = "none";
+            document.getElementById("videoContainer").style.display = "none";
+            document.getElementById("statusContainer").style.display = "block";
+
+            // Payload with Toggles
+            const payload = {
+                prompt: prompt,
+                monologue: monologue,
+                style: "cinematic",
+                is_paid_voice: false,
+                // Pass checkbox values
+                use_watermark: document.getElementById("useWatermark").checked,
+                use_intro: document.getElementById("useIntro").checked,
+                use_outro: document.getElementById("useOutro").checked
+            };
+
+            try {
+                const res = await fetch('/api/v1/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await res.json();
+                pollStatus(data.task_id);
+
+            } catch (e) {
+                alert("Error starting task: " + e);
+                resetUI();
+            }
+        }
+
+        // --- 3. POLLING LOGIC ---
+        async function pollStatus(taskId) {
+            const statusText = document.getElementById("statusText");
+            
+            const interval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/v1/tasks/${taskId}`);
+                    const data = await res.json();
+
+                    statusText.innerText = `Status: ${data.status}`;
+
+                    if (data.status === "COMPLETED" || data.status === "COMPLETED (MOCK)") {
+                        clearInterval(interval);
+                        showVideo(data.final_output);
+                        resetUI();
+                    } else if (data.status === "FAILED") {
+                        clearInterval(interval);
+                        alert("Task Failed");
+                        resetUI();
+                    }
+                } catch (e) {
+                    console.error("Polling error", e);
+                }
+            }, 2000);
+        }
+
+        function showVideo(url) {
+            // Fix path for frontend serving
+            // Converts "local_storage/outputs/xyz.mp4" -> "/videos/xyz.mp4"
+            const filename = url.split('/').pop(); 
+            const cleanUrl = `/videos/${filename}`; 
+
+            const video = document.getElementById("resultVideo");
+            video.src = cleanUrl;
+            
+            document.getElementById("downloadLink").href = cleanUrl;
+            document.getElementById("statusContainer").style.display = "none";
+            document.getElementById("videoContainer").style.display = "block";
+            
+            // Force reload to ensure display
+            video.load();
+            video.play();
+        }
+
+        function resetUI() {
+            const btn = document.getElementById("genBtn");
+            btn.disabled = false;
+            btn.innerText = "🚀 Generate Video";
+        }
+    </script>
+</body>
+</html>
