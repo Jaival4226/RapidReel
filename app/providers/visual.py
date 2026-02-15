@@ -6,145 +6,213 @@ import random
 from pathlib import Path
 from app.core.config import settings
 
+# Setup Logger
 logger = logging.getLogger("Foundry.Visuals")
 
+# ==========================================
+# 1. LEONARDO AI PROVIDER (Your Specific Code)
+# ==========================================
 class VisualProvider:
-    """
-    Handles AI Video Generation (Leonardo)
-    """
-    def __init__(self):
-        self.base_url = "https://cloud.leonardo.ai/api/rest/v1"
-        self.headers = {
-            "Authorization": f"Bearer {settings.LEONARDO_API_KEY}",
-            "Content-Type": "application/json"
-        }
-
     async def refine(self, prompt: str, style: str) -> str:
-        return f"{style} style, cinematic: {prompt}"
+        """
+        Returns the prompt combined with the style.
+        """
+        return f"{style} style: {prompt}"
 
     async def generate_video(self, prompt: str, output_path: Path) -> bool:
+        """
+        Generates a video using Leonardo.ai's API (Motion 2.0).
+        Wraps the synchronous requests in asyncio.to_thread to prevent blocking.
+        """
+        path_str = str(output_path)
+        
+        # 1. MOCK MODE CHECK
         if settings.USE_MOCK_VEO:
-            return await self._mock_generate(output_path)
+            logger.info(f"🎭 MOCK MODE: Simulating generation for '{prompt}'...")
+            await asyncio.sleep(2)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, "wb") as f:
+                f.write(b"mock_video_bytes_placeholder")
+            return True
 
-        try:
-            # 1. Generate Image
-            image_id = await self._generate_image(prompt)
-            if not image_id: return False
+        # 2. RUN LEONARDO GENERATION (Threaded)
+        return await asyncio.to_thread(self._run_leonardo_sync, prompt, path_str)
 
-            # 2. Animate (Motion SVD)
-            video_url = await self._generate_motion(image_id)
-            if not video_url: return False
+    def _run_leonardo_sync(self, prompt: str, output_filename: str) -> bool:
+        """
+        The stable, production-ready video generation method.
+        Uses Motion 2.0 which is native to Text-to-Video.
+        """
+        print(f"🚀 Sending prompt to Leonardo (Motion 2.0 Fast)...")
+        
+        headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "authorization": f"Bearer {settings.LEONARDO_API_KEY}"
+        }
 
-            # 3. Download
-            return self._download_file(video_url, str(output_path))
-        except Exception as e:
-            logger.error(f"❌ Leonardo Error: {e}")
-            return False
-
-    async def _generate_image(self, prompt: str) -> str:
-        url = f"{self.base_url}/generations"
+        # ⚡️ USE THE DEDICATED VIDEO ENDPOINT (Best for Text-to-Video)
+        url_generate = "https://cloud.leonardo.ai/api/rest/v1/generations-text-to-video"
+        
         payload = {
             "prompt": prompt,
-            "modelId": "6bef9f1b-29cb-40c7-b9df-32b51c1f67d3",
-            "width": 1024, "height": 576, "num_images": 1
+            "model": "MOTION2", # Native text-to-video model
+            "isPublic": False,
+            
+            # ✅ STABLE RESOLUTION: 16:9 for Motion 2.0
+            "width": 832,   
+            "height": 480
         }
-        try:
-            resp = requests.post(url, headers=self.headers, json=payload)
-            if resp.status_code != 200: return None
-            gen_id = resp.json()['sdGenerationJob']['generationId']
-            
-            for _ in range(30):
-                await asyncio.sleep(2)
-                data = requests.get(f"{self.base_url}/generations/{gen_id}", headers=self.headers).json()
-                status = data['generations_by_pk']['status']
-                if status == "COMPLETE":
-                    return data['generations_by_pk']['generated_images'][0]['id']
-                elif status == "FAILED": return None
-            return None
-        except: return None
 
-    async def _generate_motion(self, image_id: str) -> str:
-        url = f"{self.base_url}/generations/motion-svd"
-        payload = {"imageId": image_id, "motionStrength": 5}
         try:
-            resp = requests.post(url, headers=self.headers, json=payload)
-            if resp.status_code != 200: return None
-            gen_id = resp.json()['sdGenerationJob']['generationId']
+            # --- START JOB ---
+            response = requests.post(url_generate, json=payload, headers=headers)
             
-            for _ in range(60):
-                await asyncio.sleep(2)
-                data = requests.get(f"{self.base_url}/generations/{gen_id}", headers=self.headers).json()
-                status = data['generations_by_pk']['status']
-                if status == "COMPLETE":
-                    return data['generations_by_pk']['generated_images'][0]['motionMP4URL']
-                elif status == "FAILED": return None
-            return None
-        except: return None
+            if response.status_code != 200:
+                print(f"❌ Leonardo Error {response.status_code}: {response.text}")
+                return False
+                
+            data = response.json()
+            
+            # ID check for the specific motion job key
+            # Motion 2.0 usually returns 'motionVideoGenerationJob'
+            generation_id = (
+                data.get('motionVideoGenerationJob', {}).get('generationId') or
+                data.get('generationId')
+            )
+            
+            if not generation_id:
+                 print(f"❌ Failed to get Generation ID. Response: {data}")
+                 return False
+                 
+            print(f"⏳ Job started! ID: {generation_id}")
 
+            # --- POLL FOR COMPLETION ---
+            url_get = f"https://cloud.leonardo.ai/api/rest/v1/generations/{generation_id}"
+            
+            # Motion 2.0 is fast (usually ~30-60 seconds)
+            for i in range(40): 
+                time.sleep(5) 
+                check_response = requests.get(url_get, headers=headers)
+                
+                if check_response.status_code == 200:
+                    data = check_response.json()
+                    gen_data = data.get('generations_by_pk')
+                    
+                    if not gen_data: 
+                        print(f"   ... Waiting for server data...")
+                        continue
+                    
+                    status = gen_data.get('status')
+                    
+                    if status == "COMPLETE":
+                        print("✅ Generation Complete!")
+                        items = gen_data.get('generated_images', [])
+                        
+                        # Motion 2.0 video is usually in 'motionMP4URL'
+                        video_url = items[0].get('motionMP4URL') or items[0].get('url') if items else None
+                        
+                        if video_url:
+                            return self._download_file(video_url, output_filename)
+                        
+                        print("❌ Job Complete but URL missing.")
+                        return False
+                
+                    elif status == "FAILED":
+                        print("❌ Generation Failed on Leonardo's side.")
+                        return False
+                    
+                    print(f"   ... Status: {status} (Wait {i+1}/40)")
+
+            print("❌ Timed out waiting for Leonardo.")
+            return False
+
+        except Exception as e:
+            print(f"❌ Exception in Leonardo Provider: {e}")
+            return False
+        
     def _download_file(self, url: str, local_filename: str) -> bool:
         try:
+            # Ensure directory exists
+            Path(local_filename).parent.mkdir(parents=True, exist_ok=True)
+            
             with requests.get(url, stream=True) as r:
                 r.raise_for_status()
                 with open(local_filename, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
+            print(f"💾 Saved to: {local_filename}")
             return True
-        except: return False
+        except Exception as e:
+            print(f"❌ Failed to download: {e}")
+            return False
 
-    async def _mock_generate(self, output_path: Path):
-        await asyncio.sleep(2)
-        with open(output_path, "wb") as f: f.write(b"mock")
-        return True
-
-
+# ==========================================
+# 2. PEXELS PROVIDER (Added back for Gemini Fallback)
+# ==========================================
 class StockProvider:
-    """
-    Handles Stock Footage (Pexels)
-    """
     def __init__(self):
-        self.base_url = "https://api.pexels.com/videos"
-        self.headers = {"Authorization": settings.PEXELS_API_KEY}
+        self.api_key = settings.PEXELS_API_KEY
+        self.headers = {"Authorization": self.api_key}
 
     async def search_and_download(self, query: str, output_path: Path) -> bool:
-        return await asyncio.to_thread(self._search_sync, query, output_path)
+        """
+        Searching Pexels for stock footage (Async wrapper around Sync code).
+        """
+        return await asyncio.to_thread(self._run_pexels_sync, query, str(output_path))
 
-    def _search_sync(self, query: str, output_path: Path) -> bool:
-        logger.info(f"🔍 Pexels: Searching for '{query}'")
-        url = f"{self.base_url}/search"
-        params = {"query": query, "per_page": 1, "orientation": "landscape", "size": "medium"}
+    def _run_pexels_sync(self, query: str, output_path: str) -> bool:
+        if not self.api_key:
+            print("❌ PEXELS_API_KEY missing.")
+            return False
 
         try:
-            response = requests.get(url, headers=self.headers, params=params)
-            if response.status_code != 200: return False
+            print(f"🔍 Pexels: Searching for '{query}'...")
+            url = f"https://api.pexels.com/videos/search?query={query}&per_page=5&orientation=landscape"
             
+            response = requests.get(url, headers=self.headers)
+            if response.status_code != 200:
+                print(f"❌ Pexels Search Failed: {response.status_code}")
+                return False
+                
             data = response.json()
-            if not data.get("videos"): return False
+            if not data.get("videos"):
+                print("⚠️ No videos found on Pexels.")
+                return False
 
-            # Find best MP4 link
-            video_files = data["videos"][0]["video_files"]
-            download_url = next((vf["link"] for vf in video_files if ".mp4" in vf["link"] and vf["width"] >= 1280), None)
+            # Pick a random video
+            video_data = random.choice(data["videos"])
             
-            if not download_url:
-                # Fallback to any MP4
-                download_url = next((vf["link"] for vf in video_files if ".mp4" in vf["link"]), None)
+            # Find Best HD Link
+            best_link = None
+            files = video_data.get("video_files", [])
+            files.sort(key=lambda x: x["width"], reverse=True) # Sort largest first
+            
+            for f in files:
+                # Prefer 720p or 1080p
+                if 1280 <= f["width"] <= 1920:
+                    best_link = f["link"]
+                    break
+            
+            if not best_link and files:
+                best_link = files[0]["link"]
 
-            if download_url:
-                logger.info(f"⬇️ Downloading Pexels Video...")
-                return self._download_file(download_url, str(output_path))
-            return False
-        except Exception as e:
-            logger.error(f"Pexels Error: {e}")
-            return False
-
-    def _download_file(self, url: str, local_filename: str) -> bool:
-        try:
-            with requests.get(url, stream=True) as r:
+            # Download
+            print(f"⬇️ Downloading Pexels Video...")
+            with requests.get(best_link, stream=True) as r:
                 r.raise_for_status()
-                with open(local_filename, 'wb') as f:
+                with open(output_path, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
+            print("✅ Pexels Video Saved.")
             return True
-        except: return False
 
+        except Exception as e:
+            print(f"❌ Pexels Error: {e}")
+            return False
+
+# ==========================================
+# 3. EXPORTS
+# ==========================================
 visual_provider = VisualProvider()
 stock_provider = StockProvider()

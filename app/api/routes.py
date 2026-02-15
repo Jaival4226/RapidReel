@@ -24,7 +24,7 @@ class TaskCreate(BaseModel):
     use_intro: Optional[bool] = False
     use_outro: Optional[bool] = False
 
-# --- OUTPUT SCHEMA (For Gallery) ---
+# --- OUTPUT SCHEMA ---
 class TaskSchema(BaseModel):
     id: str
     prompt: str
@@ -35,7 +35,6 @@ class TaskSchema(BaseModel):
     final_output: Optional[str] = None
     created_at: Any = None 
     
-    # Return these to frontend so UI knows what was used
     use_watermark: Optional[bool] = False
     use_intro: Optional[bool] = False
     use_outro: Optional[bool] = False
@@ -47,12 +46,7 @@ class TaskSchema(BaseModel):
 
 @router.post("/generate")
 def create_task(req: TaskCreate, bg: BackgroundTasks, db: Session = Depends(get_db)):
-    """
-    Creates a new Task in the DB with Branding Options and starts the Orchestrator.
-    """
     task_id = str(uuid.uuid4())
-    
-    # 1. Create DB Entry
     new_task = Task(
         id=task_id, 
         prompt=req.prompt, 
@@ -60,13 +54,10 @@ def create_task(req: TaskCreate, bg: BackgroundTasks, db: Session = Depends(get_
         style=req.style, 
         is_paid_voice=req.is_paid_voice,
         status="QUEUED",
-        
-        # Save Branding Choices
         use_watermark=req.use_watermark,
         use_intro=req.use_intro,
         use_outro=req.use_outro
     )
-    
     try:
         db.add(new_task)
         db.commit()
@@ -75,64 +66,51 @@ def create_task(req: TaskCreate, bg: BackgroundTasks, db: Session = Depends(get_
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Database Error: {e}")
 
-    # 2. Start Background Job
     bg.add_task(orchestrator.process_task, task_id)
-
     return {"task_id": task_id, "status": "QUEUED"}
 
 @router.get("/tasks", response_model=List[TaskSchema])
 def list_tasks(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
-    """
-    Returns the history of tasks for the Gallery.
-    """
     tasks = db.query(Task).order_by(Task.created_at.desc()).offset(skip).limit(limit).all()
     return tasks
 
 @router.get("/tasks/{task_id}")
 def get_status(task_id: str, db: Session = Depends(get_db)):
-    """
-    Returns status of a specific task (used for polling).
-    """
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
     return {
         "id": task.id,
         "status": task.status,
         "final_output": task.final_output
     }
 
+# --- THE FIXED UPLOAD ENDPOINT ---
 @router.post("/upload-assets")
 async def upload_brand_assets(
     intro: UploadFile = File(None),
     outro: UploadFile = File(None),
     watermark: UploadFile = File(None)
 ):
-    """
-    Uploads branding files and saves them to local_storage/assets/
-    """
     try:
-        # Ensure directory exists
+        # 1. FORCE CREATE THE DIRECTORY
         settings.ASSETS_PATH.mkdir(parents=True, exist_ok=True)
         
         status_msg = []
 
+        # 2. SAVE FILES IF UPLOADED
         if intro:
-            dest = settings.INTRO_FILE
-            with open(dest, "wb") as buffer:
+            with open(settings.INTRO_FILE, "wb") as buffer:
                 shutil.copyfileobj(intro.file, buffer)
             status_msg.append("Intro updated")
 
         if outro:
-            dest = settings.OUTRO_FILE
-            with open(dest, "wb") as buffer:
+            with open(settings.OUTRO_FILE, "wb") as buffer:
                 shutil.copyfileobj(outro.file, buffer)
             status_msg.append("Outro updated")
 
         if watermark:
-            dest = settings.WATERMARK_FILE
-            with open(dest, "wb") as buffer:
+            with open(settings.WATERMARK_FILE, "wb") as buffer:
                 shutil.copyfileobj(watermark.file, buffer)
             status_msg.append("Watermark updated")
 
@@ -142,4 +120,5 @@ async def upload_brand_assets(
         return {"message": ", ".join(status_msg), "status": "success"}
 
     except Exception as e:
+        print(f"UPLOAD ERROR: {e}") # Print error to terminal
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
