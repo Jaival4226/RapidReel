@@ -41,6 +41,10 @@ async def gallery_page(request: Request):
 async def database_page(request: Request):
     return templates.TemplateResponse("database.html", {"request": request})
 
+@app.get("/studio", response_class=HTMLResponse)
+async def studio_page(request: Request):
+    return templates.TemplateResponse("studio.html", {"request": request})
+
 if __name__ == "__main__":
     print(f"🚀 FOUNDRY PRO IS LIVE | http://localhost:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -3,22 +3,23 @@ import subprocess
 import logging
 import os
 import shutil
+import uuid
 from pathlib import Path
 from sqlalchemy.orm import Session
 from app.core.config import settings
 
-# --- PROVIDERS ---
 from app.providers.audio import audio_provider
 from app.providers.visual import visual_provider, stock_provider
 from app.services.router import decision_engine
-
-# --- DATABASE ---
 from app.db.models import Task
 from app.db.session import SessionLocal
 
 logger = logging.getLogger("Foundry.Orchestrator")
 
 class Orchestrator:
+    # ---------------------------------------------------------
+    # 1. FRESH GENERATION
+    # ---------------------------------------------------------
     async def process_task(self, task_id: str):
         db: Session = SessionLocal()
         task = db.query(Task).filter(Task.id == task_id).first()
@@ -29,43 +30,39 @@ class Orchestrator:
             task.status = "PROCESSING"
             db.commit()
             
-            # Paths
             raw_vid = settings.TEMP_DIR / f"{task_id}_raw.mp4"
             audio = settings.TEMP_DIR / f"{task_id}.mp3"
             final = settings.OUTPUT_DIR / f"{task_id}_final.mp4"
             subtitle_file = None
 
-            # 1. Audio
-            audio_script = task.monologue.strip() if task.monologue else None
-            if audio_script:
-                await audio_provider.generate(audio_script, audio, task.is_paid_voice)
+            # Audio
+            if task.monologue:
+                await audio_provider.generate(task.monologue, audio, task.is_paid_voice)
                 if audio.exists() and os.path.getsize(audio) > 100:
                     subtitle_file = await asyncio.to_thread(audio_provider.transcribe, audio)
             
-            # 2. Visuals
+            # Visuals
             provider = settings.VIDEO_PROVIDER
             if provider == "auto":
+                # 1. DECIDE
                 provider = await asyncio.to_thread(decision_engine.decide_provider, task.prompt)
             
             if provider == "pexels":
                 await stock_provider.search_and_download(task.prompt, raw_vid)
             elif provider == "leonardo":
-                refined = await visual_provider.refine(task.prompt, task.style)
-                await visual_provider.generate_video(refined, raw_vid)
+                # 2. REFINE (The new Feature)
+                refined_prompt = await asyncio.to_thread(decision_engine.refine_for_leonardo, task.prompt)
+                await visual_provider.generate_video(refined_prompt, raw_vid)
             else:
                 if not raw_vid.exists(): self._handle_mock(raw_vid, final)
 
-            # 3. Stitching
             if not raw_vid.exists() and not settings.USE_MOCK_VEO:
                 raise Exception("Video generation failed.")
 
-            if settings.USE_MOCK_VEO:
-                self._handle_mock(raw_vid, final)
-                task.status = "COMPLETED (MOCK)"
-            else:
-                self._stitch_and_brand(raw_vid, audio, final, subtitle_file, task)
-                task.status = "COMPLETED"
-                task.final_output = str(final)
+            self._stitch_and_brand(raw_vid, audio, final, subtitle_file, task.use_watermark, task.use_intro, task.use_outro)
+            
+            task.status = "COMPLETED"
+            task.final_output = str(final)
 
         except Exception as e:
             logger.error(f"Task Failed: {e}", exc_info=True)
@@ -75,116 +72,174 @@ class Orchestrator:
             db.commit()
             db.close()
 
-    def _stitch_and_brand(self, video_path: Path, audio_path: Path, output_path: Path, subtitles_path: Path = None, task=None):
-        """
-        Robust Pipeline:
-        1. Pre-process Core Video (Add Silence if needed, Burn Subs, Watermark) -> core.mp4
-        2. Concat (Intro + Core + Outro)
-        """
-        core_path = video_path.parent / f"{video_path.stem}_core.mp4"
+    # ---------------------------------------------------------
+    # 2. REMIX ENGINE
+    # ---------------------------------------------------------
+    async def remix_task(self, task_id: str, payload: dict):
+        db: Session = SessionLocal()
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task: return
+
+        try:
+            print(f"🎛️ REMIXING {task_id}. Video: {payload['regenerate_video']} | Audio: {payload['regenerate_audio']}")
+            
+            raw_vid = settings.TEMP_DIR / f"{task_id}_raw.mp4"
+            audio = settings.TEMP_DIR / f"{task_id}.mp3"
+            final = settings.OUTPUT_DIR / f"{task_id}_final.mp4"
+            subtitle_file = audio.with_suffix(".srt")
+
+            # A. Visuals
+            if payload['regenerate_video']:
+                print("🎨 REGENERATING VIDEO...")
+                if raw_vid.exists(): os.remove(raw_vid)
+                
+                provider = settings.VIDEO_PROVIDER
+                if provider == "auto":
+                    provider = await asyncio.to_thread(decision_engine.decide_provider, payload['prompt'])
+                
+                if provider == "pexels":
+                    await stock_provider.search_and_download(payload['prompt'], raw_vid)
+                elif provider == "leonardo":
+                    # REFINE HERE TOO
+                    refined_prompt = await asyncio.to_thread(decision_engine.refine_for_leonardo, payload['prompt'])
+                    await visual_provider.generate_video(refined_prompt, raw_vid)
+            else:
+                if not raw_vid.exists(): raise Exception("Raw video missing.")
+
+            # B. Audio (Unique Filename Logic)
+            if payload['regenerate_audio']:
+                print("🎤 REGENERATING AUDIO...")
+                # Unique ID to break cache
+                remix_id = uuid.uuid4().hex[:6]
+                new_audio = settings.TEMP_DIR / f"{task_id}_{remix_id}.mp3"
+                
+                if payload['monologue']:
+                    success = await audio_provider.generate(payload['monologue'], new_audio, payload['is_paid_voice'])
+                    if success:
+                        await asyncio.to_thread(audio_provider.transcribe, new_audio)
+                        # Pointer Swap
+                        audio = new_audio
+                        subtitle_file = new_audio.with_suffix(".srt")
+                        
+                        # Save back to main file for future consistency
+                        shutil.copy(new_audio, settings.TEMP_DIR / f"{task_id}.mp3")
+                        if subtitle_file.exists(): shutil.copy(subtitle_file, settings.TEMP_DIR / f"{task_id}.srt")
+
+            # C. Stitching
+            print(f"⚙️ STITCHING... Watermark: {payload['use_watermark']}")
+            
+            self._stitch_and_brand(
+                raw_vid, audio, final, 
+                (subtitle_file if subtitle_file.exists() else None),
+                payload['use_watermark'],
+                payload['use_intro'],
+                payload['use_outro']
+            )
+            
+            task.status = "COMPLETED"
+            task.final_output = str(final)
+            print(f"✅ REMIX SAVED: {final}")
+
+        except Exception as e:
+            logger.error(f"Remix Failed: {e}", exc_info=True)
+            task.status = "FAILED"
+            task.error_msg = str(e)
+        finally:
+            db.commit()
+            db.close()
+
+    # ---------------------------------------------------------
+    # 3. SHARED PIPELINE (FFmpeg)
+    # ---------------------------------------------------------
+    def _stitch_and_brand(self, video_path, audio_path, output_path, subtitles_path, use_wm, use_in, use_out):
+        
+        unique_core = f"{video_path.stem}_core_{uuid.uuid4().hex[:4]}.mp4"
+        core_path = video_path.parent / unique_core
         
         has_audio = audio_path.exists() and os.path.getsize(audio_path) > 100
-        has_watermark = settings.WATERMARK_FILE.exists() and (task.use_watermark if task else False)
-        
-        # --- STEP 1: PREPARE CORE VIDEO ---
-        # We ensure the core video has a stereo audio track (even if silent)
-        # so it can be concatenated with Intro/Outro music later.
-        
+        apply_wm = settings.WATERMARK_FILE.exists() and use_wm
+
         input_args = ["-y", "-stream_loop", "-1", "-i", str(video_path)]
         if has_audio:
             input_args.extend(["-i", str(audio_path)])
         else:
-            # Generate 5 seconds of silence if no audio
             input_args.extend(["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"])
 
-        # Watermark Setup
-        wm_idx = 2  # Default index for watermark
-        
         filter_complex = []
         last_vid = "[0:v]"
         
-        # Scale & Pad to 720p
         filter_complex.append(f"{last_vid}scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v_scaled]")
         last_vid = "[v_scaled]"
 
-        # Subtitles
-        if subtitles_path and subtitles_path.exists():
+        if subtitles_path:
             sub_esc = str(subtitles_path).replace("\\", "/").replace(":", "\\:")
-            style = "Fontname=Arial,FontSize=20,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,MarginV=25"
+            style = "Fontname=Arial,FontSize=24,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,MarginV=30"
             filter_complex.append(f"{last_vid}subtitles='{sub_esc}':force_style='{style}'[v_subbed]")
             last_vid = "[v_subbed]"
 
-        # Watermark
-        if has_watermark:
+        if apply_wm:
             input_args.extend(["-i", str(settings.WATERMARK_FILE)])
-            filter_complex.append(f"[{wm_idx}:v]scale=150:-1[wm];{last_vid}[wm]overlay=main_w-overlay_w-20:20[v_final]")
+            filter_complex.append(f"[2:v]scale=150:-1[wm];{last_vid}[wm]overlay=main_w-overlay_w-20:20[v_final]")
             last_vid = "[v_final]"
         else:
             filter_complex.append(f"{last_vid}null[v_final]")
+            last_vid = "[v_final]"
 
-        # Audio Normalization (Map input 1 to stereo 44.1k)
         filter_complex.append("[1:a]aformat=sample_rates=44100:channel_layouts=stereo[a_final]")
 
         cmd1 = ["ffmpeg", *input_args, "-filter_complex", ";".join(filter_complex), "-map", last_vid, "-map", "[a_final]"]
-        
-        if has_audio:
-            cmd1.append("-shortest")
-        else:
-            cmd1.extend(["-t", "10"]) # 10s default duration
-
+        if has_audio: cmd1.append("-shortest")
+        else: cmd1.extend(["-t", "10"])
         cmd1.extend(["-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", str(core_path)])
-        subprocess.run(cmd1, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        
+        subprocess.run(cmd1, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
 
-        # --- STEP 2: CONCATENATION ---
-        has_intro = settings.INTRO_FILE.exists() and (task.use_intro if task else False)
-        has_outro = settings.OUTRO_FILE.exists() and (task.use_outro if task else False)
+        # Concatenation
+        apply_intro = settings.INTRO_FILE.exists() and use_in
+        apply_outro = settings.OUTRO_FILE.exists() and use_out
 
-        if not has_intro and not has_outro:
+        if output_path.exists():
+            os.remove(output_path)
+
+        if not apply_intro and not apply_outro:
             if core_path.exists(): shutil.move(core_path, output_path)
             return
 
-        # Build Concat List
         concat_inputs = ["-y"]
         concat_filter = []
+        concat_maps = []
         n = 0
-        
-        # We need to build the map string explicitly as we go: [v0][a0][v1][a1]...
-        concat_maps = [] 
 
-        # Intro
-        if has_intro:
+        if apply_intro:
             concat_inputs.extend(["-i", str(settings.INTRO_FILE)])
             concat_filter.append(f"[{n}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v{n}]")
             concat_filter.append(f"[{n}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{n}]")
-            concat_maps.append(f"[v{n}][a{n}]") # Correct Pairing
+            concat_maps.append(f"[v{n}][a{n}]")
             n += 1
 
-        # Core
         concat_inputs.extend(["-i", str(core_path)])
         concat_filter.append(f"[{n}:v]setsar=1[v{n}]")
         concat_filter.append(f"[{n}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{n}]")
-        concat_maps.append(f"[v{n}][a{n}]") # Correct Pairing
+        concat_maps.append(f"[v{n}][a{n}]")
         n += 1
 
-        # Outro
-        if has_outro:
+        if apply_outro:
             concat_inputs.extend(["-i", str(settings.OUTRO_FILE)])
             concat_filter.append(f"[{n}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v{n}]")
             concat_filter.append(f"[{n}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{n}]")
-            concat_maps.append(f"[v{n}][a{n}]") # Correct Pairing
+            concat_maps.append(f"[v{n}][a{n}]")
             n += 1
 
-        # Concat Command
-        full_map = "".join(concat_maps) # Result: [v0][a0][v1][a1][v2][a2]
-        
+        full_map = "".join(concat_maps)
         concat_filter.append(f"{full_map}concat=n={n}:v=1:a=1[outv][outa]")
 
         cmd2 = ["ffmpeg", *concat_inputs, "-filter_complex", ";".join(concat_filter), 
                 "-map", "[outv]", "-map", "[outa]", 
                 "-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", str(output_path)]
 
-        # Keep stderr=None for now just in case, but this logic is definitely correct.
-        subprocess.run(cmd2, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        subprocess.run(cmd2, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
+        
+        if core_path.exists(): os.remove(core_path)
 
     def _handle_mock(self, raw, final):
         if raw.exists(): shutil.copy(raw, final)

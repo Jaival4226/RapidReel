@@ -1,87 +1,83 @@
-import os
+import edge_tts
 import asyncio
-import logging
-import subprocess
-from pathlib import Path
-from app.core.config import settings
 import whisper
-import pysubs2
-import edge_tts  # <--- New Library
+import logging
+import os
+from pathlib import Path
 
 logger = logging.getLogger("Foundry.Audio")
 
 class AudioProvider:
     def __init__(self):
-        self.model = None # Lazy load Whisper model
+        self.voice_free = "en-US-ChristopherNeural"
+        self.model = None
 
     async def generate(self, text: str, output_path: Path, is_paid: bool = False) -> bool:
         """
-        Generates Audio using Microsoft Edge TTS (Free & High Quality).
+        Generates audio using Edge TTS with Robust Retry Logic.
         """
-        try:
-            # 1. Mock Mode Check
-            if settings.USE_MOCK_AUDIO:
-                logger.info("🎤 MOCK AUDIO: Generating silent placeholder...")
-                return await self.generate_mock(output_path)
+        voice = self.voice_free
+        
+        # RETRY LOOP: Try 3 times
+        for attempt in range(3):
+            try:
+                # Ensure directory exists
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Delete existing if present to ensure fresh write
+                if output_path.exists():
+                    os.remove(output_path)
 
-            logger.info(f"🎤 Generating EdgeTTS Audio: '{text[:30]}...'")
+                communicate = edge_tts.Communicate(text, voice)
+                await communicate.save(str(output_path))
+                
+                # Verify file
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    logger.info(f"✅ Audio generated (Attempt {attempt+1})")
+                    return True
             
-            # 2. Select Voice
-            # Options: "en-US-AriaNeural" (Female), "en-US-ChristopherNeural" (Male), "en-US-GuyNeural" (Male)
-            voice = "en-US-ChristopherNeural" 
-            
-            # 3. Generate
-            communicate = edge_tts.Communicate(text, voice)
-            await communicate.save(str(output_path))
-            
-            logger.info(f"✅ Audio saved to: {output_path}")
-            return True
-
-        except Exception as e:
-            logger.error(f"❌ Audio Generation Failed: {e}")
-            return False
-
-    async def generate_mock(self, output_path: Path):
-        """Generates 5 seconds of silence."""
-        cmd = ["ffmpeg", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "5", "-y", str(output_path)]
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True
+            except Exception as e:
+                logger.warning(f"⚠️ EdgeTTS Failed (Attempt {attempt+1}): {e}")
+                await asyncio.sleep(2) # Wait 2s before retry
+        
+        logger.error("❌ Audio Generation Failed after 3 attempts.")
+        return False
 
     def transcribe(self, audio_path: Path) -> Path:
         """
-        Generates .srt subtitles using OpenAI Whisper.
+        Generates an SRT subtitle file from the audio.
         """
+        if not self.model:
+            logger.info("🧠 Loading Whisper Model...")
+            self.model = whisper.load_model("tiny")
+
         try:
-            if not audio_path.exists():
-                logger.error(f"❌ Audio file missing: {audio_path}")
-                return None
-
-            # Lazy load Whisper to save RAM
-            if not self.model:
-                logger.info("📝 Loading Whisper Model (Base)...")
-                self.model = whisper.load_model("base")
-
-            logger.info(f"📝 Transcribing audio for subtitles...")
+            logger.info(f"📝 Transcribing: {audio_path.name}")
             result = self.model.transcribe(str(audio_path))
             
-            # Convert Whisper JSON to Subtitles
-            subs = pysubs2.SSAFile()
-            for segment in result["segments"]:
-                start_ms = int(segment["start"] * 1000)
-                end_ms = int(segment["end"] * 1000)
-                text = segment["text"].strip()
-                
-                # Add subtitle event
-                subs.events.append(pysubs2.SSAEvent(start=start_ms, end=end_ms, text=text))
-
             srt_path = audio_path.with_suffix(".srt")
-            subs.save(str(srt_path))
             
-            logger.info(f"✅ Subtitles saved: {srt_path.name}")
+            with open(srt_path, "w", encoding="utf-8") as f:
+                for i, segment in enumerate(result["segments"]):
+                    start = self._format_time(segment["start"])
+                    end = self._format_time(segment["end"])
+                    text = segment["text"].strip()
+                    
+                    f.write(f"{i+1}\n")
+                    f.write(f"{start} --> {end}\n")
+                    f.write(f"{text}\n\n")
+            
             return srt_path
 
         except Exception as e:
             logger.error(f"❌ Transcription Failed: {e}")
             return None
+
+    def _format_time(self, seconds: float) -> str:
+        millis = int((seconds % 1) * 1000)
+        seconds = int(seconds)
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        return f"{hours:02}:{minutes:02}:{seconds:02},{millis:03}"
 
 audio_provider = AudioProvider()

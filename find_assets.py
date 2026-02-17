@@ -1,4 +1,4 @@
-from app.core.config import settings
+from app.core.config import settings        
 import os
 
 print("\n--- 🔍 FOUNDRY PATH DIAGNOSTICS ---")

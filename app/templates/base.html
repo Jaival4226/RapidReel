@@ -3,27 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Foundry | AI Multimedia Platform</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <title>Foundry Pro</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
     <nav class="navbar">
-        <div class="logo">RAPID <span class="pro-badge">REEL</span></div>
+        <div class="logo">FOUNDRY <span class="pro-badge">PRO</span></div>
         <div class="nav-links">
-            <a href="/" class="nav-item">HOME</a>
-            <a href="/create" class="nav-item">CREATE</a>
-            <a href="/gallery" class="nav-item">GALLERY</a>
-            <a href="/database" class="nav-item" style="color: #666;">DATABASE</a> </div>
+            <a href="/">HOME</a>
+            <a href="/create">CREATE</a>
+            <a href="/gallery">GALLERY</a>
+            <a href="/database">DATABASE</a> 
+            <a href="/gallery" style="color: var(--accent);">STUDIO</a> 
+        </div>
     </nav>
 
-    <main class="main-content">
+    <div class="main-content">
         {% block content %}{% endblock %}
-    </main>
+    </div>
 
     <footer>
-        <p>POWERED BY VEO 2.0 & ELEVENLABS // SYSTEM STATUS: <span style="color:#00ff9d">ONLINE</span></p>
+        FOUNDRY PRO ENGINE v1.5 | SYSTEM ONLINE
     </footer>
 
     {% block scripts %}{% endblock %}
