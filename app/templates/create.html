@@ -33,8 +33,7 @@
             <div class="input-group">
                 <label>AUDIO ENGINE</label>
                 <select id="voiceInput">
-                    <option value="false">EdgeTTS (Free)</option>
-                    <option value="true">ElevenLabs (Paid)</option>
+                    <option value="false">EdgeTTS</option>
                 </select>
             </div>
         </div>
@@ -70,7 +69,7 @@
 
             <div style="margin-top: 15px; display: flex; gap: 20px;">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                    <input type="checkbox" id="useWatermark" checked style="width: auto;"> 
+                    <input type="checkbox" id="useWatermark" style="width: auto;"> 
                     APPLY WATERMARK
                 </label>
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
@@ -80,6 +79,10 @@
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
                     <input type="checkbox" id="useOutro" style="width: auto;"> 
                     ADD OUTRO
+                </label>
+                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                    <input type="checkbox" id="useSubtitles" checked style="width: auto;"> 
+                    ADD SUBTITLES
                 </label>
             </div>
         </div>
@@ -151,6 +154,7 @@
         const useWatermark = document.getElementById('useWatermark').checked;
         const useIntro = document.getElementById('useIntro').checked;
         const useOutro = document.getElementById('useOutro').checked;
+        const useSubtitles = document.getElementById('useSubtitles').checked;
         
         const btn = document.getElementById('genBtn');
         const monitor = document.getElementById('status-monitor');
@@ -175,7 +179,8 @@
                     is_paid_voice: usePaid,
                     use_watermark: useWatermark,
                     use_intro: useIntro,
-                    use_outro: useOutro
+                    use_outro: useOutro,
+                    use_subtitles: useSubtitles
                 })
             });
             

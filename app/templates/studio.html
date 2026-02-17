@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container" style="max-width: 1400px;">
     <div class="page-header">
-        <h2>FOUNDRY STUDIO <span style="font-size:0.5em; color:var(--accent);">// REMIX ENGINE</span></h2>
+        <h2>RAPID REEL STUDIO <span style="font-size:0.5em; color:var(--accent);">// REMIX ENGINE</span></h2>
         <div class="divider"></div>
     </div>
 
@@ -19,9 +19,35 @@
                 <textarea id="monologueInput" rows="6" style="font-size: 0.9em; line-height: 1.4;"></textarea>
             </div>
 
+            <div class="input-group">
+                <label style="color: var(--accent);">BRAND ASSETS (Global Library)</label>
+                <div style="background: #080808; padding: 15px; border: 1px dashed #333; border-radius: 4px;">
+                    <div style="display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <label style="font-size:0.7em; color:#666; width: 80px;">WATERMARK</label> 
+                            <input type="file" id="fileWatermark" accept="image/png" style="font-size: 0.8em; flex: 1;">
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <label style="font-size:0.7em; color:#666; width: 80px;">INTRO</label> 
+                            <input type="file" id="fileIntro" accept="video/mp4" style="font-size: 0.8em; flex: 1;">
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <label style="font-size:0.7em; color:#666; width: 80px;">OUTRO</label> 
+                            <input type="file" id="fileOutro" accept="video/mp4" style="font-size: 0.8em; flex: 1;">
+                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <button onclick="uploadAssets()" class="btn-secondary" style="padding: 5px 10px; font-size: 0.7em; margin: 0;">
+                            💾 UPLOAD & UPDATE
+                        </button>
+                        <span id="upload-status" style="font-family: monospace; font-size: 0.7em;"></span>
+                    </div>
+                </div>
+            </div>
+
             <div class="input-group" style="background: #080808; padding: 15px; border: 1px solid #333; border-radius: 4px;">
                 <label style="color: var(--accent); margin-bottom: 10px; display: block;">BRANDING OVERRIDES</label>
-                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
                     <label class="checkbox-label">
                         <input type="checkbox" id="useWatermark"> WATERMARK
                     </label>
@@ -30,6 +56,9 @@
                     </label>
                     <label class="checkbox-label">
                         <input type="checkbox" id="useOutro"> OUTRO
+                    </label>
+                     <label class="checkbox-label">
+                        <input type="checkbox" id="useSubtitles"> SUBTITLES
                     </label>
                 </div>
             </div>
@@ -68,9 +97,50 @@
     const urlParams = new URLSearchParams(window.location.search);
     const TASK_ID = urlParams.get('id');
     
-    // Store original state to detect changes
     let initialData = {};
 
+    // --- UPLOAD LOGIC (NEW IN STUDIO) ---
+    async function uploadAssets() {
+        const statusText = document.getElementById("upload-status");
+        statusText.innerText = "> UPLOADING...";
+        statusText.style.color = "yellow";
+
+        const formData = new FormData();
+        const watermark = document.getElementById("fileWatermark").files[0];
+        const intro = document.getElementById("fileIntro").files[0];
+        const outro = document.getElementById("fileOutro").files[0];
+
+        if (watermark) formData.append("watermark", watermark);
+        if (intro) formData.append("intro", intro);
+        if (outro) formData.append("outro", outro);
+
+        if ([...formData.entries()].length === 0) {
+            statusText.innerText = "> NO FILE SELECTED";
+            statusText.style.color = "orange";
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/upload-assets`, {
+                method: "POST",
+                body: formData
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                statusText.innerText = "> UPDATED";
+                statusText.style.color = "#00f2ff"; 
+            } else {
+                throw new Error("Upload Failed");
+            }
+        } catch (e) {
+            console.error(e);
+            statusText.innerText = "> ERROR";
+            statusText.style.color = "red";
+        }
+    }
+
+    // --- TASK LOADING ---
     async function loadTask() {
         if (!TASK_ID) {
             alert("No Task ID provided.");
@@ -85,14 +155,14 @@
             const res = await fetch(`${API_BASE}/tasks/${TASK_ID}`);
             const data = await res.json();
             
-            initialData = data; // SAVE ORIGINAL STATE
+            initialData = data; 
 
-            // Populate Fields
             document.getElementById('monologueInput').value = data.monologue || "";
             document.getElementById('promptInput').value = data.prompt || "";
             document.getElementById('useWatermark').checked = data.use_watermark;
             document.getElementById('useIntro').checked = data.use_intro;
             document.getElementById('useOutro').checked = data.use_outro;
+            document.getElementById('useSubtitles').checked = data.use_subtitles;
 
             if (data.final_output) {
                 updateVideoPlayer();
@@ -107,12 +177,9 @@
 
     function updateVideoPlayer() {
         const container = document.querySelector('.preview-panel');
-        
-        // Remove old player to kill cache
         const oldPlayer = document.getElementById('studioPlayer');
         if (oldPlayer) oldPlayer.remove();
 
-        // Create new player from scratch
         const newPlayer = document.createElement('video');
         newPlayer.id = 'studioPlayer';
         newPlayer.controls = true;
@@ -121,11 +188,9 @@
         newPlayer.style.border = '1px solid #333';
         newPlayer.style.boxShadow = '0 0 20px rgba(0,0,0,0.5)';
         
-        // Random cache buster to force browser to re-download
         const url = `/videos/${TASK_ID}_final.mp4?v=${Math.random()}`;
         newPlayer.src = url;
         
-        // Insert before the download link div
         const controlsDiv = container.querySelector('div[style*="margin-top"]');
         container.insertBefore(newPlayer, controlsDiv);
         
@@ -133,6 +198,7 @@
         link.href = url;
     }
 
+    // --- REMIX LOGIC ---
     async function submitRemix() {
         const btn = document.getElementById('remixBtn');
         const status = document.getElementById('status-text');
@@ -142,12 +208,10 @@
         status.innerText = "> Calculating differences...";
         status.style.color = "yellow";
 
-        // 1. Get Current Inputs
         const currentPrompt = document.getElementById('promptInput').value;
         const currentMonologue = document.getElementById('monologueInput').value;
         const currentStyle = initialData.style || "cinematic"; 
 
-        // 2. Logic: What changed?
         const regenVideo = (currentPrompt.trim() !== initialData.prompt.trim());
         const regenAudio = (currentMonologue.trim() !== initialData.monologue.trim());
 
@@ -160,8 +224,8 @@
             use_watermark: document.getElementById('useWatermark').checked,
             use_intro: document.getElementById('useIntro').checked,
             use_outro: document.getElementById('useOutro').checked,
+            use_subtitles: document.getElementById('useSubtitles').checked,
             
-            // EXPLICIT INSTRUCTIONS FOR BACKEND
             regenerate_video: regenVideo,
             regenerate_audio: regenAudio
         };
@@ -198,13 +262,11 @@
                 status.innerText = "> RENDER COMPLETE.";
                 status.style.color = "var(--accent)";
                 
-                // Update Initial Data so next edit compares against this new version
                 initialData = { ...initialData, ...data };
                 initialData.prompt = document.getElementById('promptInput').value;
                 initialData.monologue = document.getElementById('monologueInput').value;
-                initialData.use_watermark = document.getElementById('useWatermark').checked;
 
-                updateVideoPlayer(); // Force Reload
+                updateVideoPlayer(); 
                 
                 document.getElementById('remixBtn').disabled = false;
                 document.getElementById('remixBtn').innerText = "⚡ APPLY CHANGES & RENDER";

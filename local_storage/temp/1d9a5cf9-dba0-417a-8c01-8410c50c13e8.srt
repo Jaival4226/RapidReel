@@ -1,0 +1,12 @@
+1
+00:00:00,000 --> 00:00:02,800
+Intelligence is no longer static.
+
+2
+00:00:02,800 --> 00:00:07,080
+It flows, adapts and evolves at the speed of light.
+
+3
+00:00:07,080 --> 00:00:11,519
+Security is not a wall, but a living, breathing stream of data.
+

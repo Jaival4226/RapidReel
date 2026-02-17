@@ -14,7 +14,7 @@ from app.services.router import decision_engine
 from app.db.models import Task
 from app.db.session import SessionLocal
 
-logger = logging.getLogger("Foundry.Orchestrator")
+logger = logging.getLogger("RapidReel.Orchestrator")
 
 class Orchestrator:
     # ---------------------------------------------------------
@@ -44,13 +44,11 @@ class Orchestrator:
             # Visuals
             provider = settings.VIDEO_PROVIDER
             if provider == "auto":
-                # 1. DECIDE
                 provider = await asyncio.to_thread(decision_engine.decide_provider, task.prompt)
             
             if provider == "pexels":
                 await stock_provider.search_and_download(task.prompt, raw_vid)
             elif provider == "leonardo":
-                # 2. REFINE (The new Feature)
                 refined_prompt = await asyncio.to_thread(decision_engine.refine_for_leonardo, task.prompt)
                 await visual_provider.generate_video(refined_prompt, raw_vid)
             else:
@@ -59,7 +57,7 @@ class Orchestrator:
             if not raw_vid.exists() and not settings.USE_MOCK_VEO:
                 raise Exception("Video generation failed.")
 
-            self._stitch_and_brand(raw_vid, audio, final, subtitle_file, task.use_watermark, task.use_intro, task.use_outro)
+            self._stitch_and_brand(raw_vid, audio, final, subtitle_file, task.use_watermark, task.use_intro, task.use_outro, task.use_subtitles)
             
             task.status = "COMPLETED"
             task.final_output = str(final)
@@ -81,7 +79,7 @@ class Orchestrator:
         if not task: return
 
         try:
-            print(f"🎛️ REMIXING {task_id}. Video: {payload['regenerate_video']} | Audio: {payload['regenerate_audio']}")
+            print(f"🎛️ REMIXING {task_id}")
             
             raw_vid = settings.TEMP_DIR / f"{task_id}_raw.mp4"
             audio = settings.TEMP_DIR / f"{task_id}.mp3"
@@ -90,55 +88,43 @@ class Orchestrator:
 
             # A. Visuals
             if payload['regenerate_video']:
-                print("🎨 REGENERATING VIDEO...")
                 if raw_vid.exists(): os.remove(raw_vid)
-                
                 provider = settings.VIDEO_PROVIDER
                 if provider == "auto":
                     provider = await asyncio.to_thread(decision_engine.decide_provider, payload['prompt'])
-                
                 if provider == "pexels":
                     await stock_provider.search_and_download(payload['prompt'], raw_vid)
                 elif provider == "leonardo":
-                    # REFINE HERE TOO
                     refined_prompt = await asyncio.to_thread(decision_engine.refine_for_leonardo, payload['prompt'])
                     await visual_provider.generate_video(refined_prompt, raw_vid)
             else:
                 if not raw_vid.exists(): raise Exception("Raw video missing.")
 
-            # B. Audio (Unique Filename Logic)
+            # B. Audio
             if payload['regenerate_audio']:
-                print("🎤 REGENERATING AUDIO...")
-                # Unique ID to break cache
                 remix_id = uuid.uuid4().hex[:6]
                 new_audio = settings.TEMP_DIR / f"{task_id}_{remix_id}.mp3"
-                
                 if payload['monologue']:
                     success = await audio_provider.generate(payload['monologue'], new_audio, payload['is_paid_voice'])
                     if success:
                         await asyncio.to_thread(audio_provider.transcribe, new_audio)
-                        # Pointer Swap
                         audio = new_audio
                         subtitle_file = new_audio.with_suffix(".srt")
-                        
-                        # Save back to main file for future consistency
                         shutil.copy(new_audio, settings.TEMP_DIR / f"{task_id}.mp3")
                         if subtitle_file.exists(): shutil.copy(subtitle_file, settings.TEMP_DIR / f"{task_id}.srt")
 
             # C. Stitching
-            print(f"⚙️ STITCHING... Watermark: {payload['use_watermark']}")
-            
             self._stitch_and_brand(
                 raw_vid, audio, final, 
                 (subtitle_file if subtitle_file.exists() else None),
                 payload['use_watermark'],
                 payload['use_intro'],
-                payload['use_outro']
+                payload['use_outro'],
+                payload['use_subtitles']
             )
             
             task.status = "COMPLETED"
             task.final_output = str(final)
-            print(f"✅ REMIX SAVED: {final}")
 
         except Exception as e:
             logger.error(f"Remix Failed: {e}", exc_info=True)
@@ -151,7 +137,7 @@ class Orchestrator:
     # ---------------------------------------------------------
     # 3. SHARED PIPELINE (FFmpeg)
     # ---------------------------------------------------------
-    def _stitch_and_brand(self, video_path, audio_path, output_path, subtitles_path, use_wm, use_in, use_out):
+    def _stitch_and_brand(self, video_path, audio_path, output_path, subtitles_path, use_wm, use_in, use_out, use_subs):
         
         unique_core = f"{video_path.stem}_core_{uuid.uuid4().hex[:4]}.mp4"
         core_path = video_path.parent / unique_core
@@ -171,7 +157,7 @@ class Orchestrator:
         filter_complex.append(f"{last_vid}scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v_scaled]")
         last_vid = "[v_scaled]"
 
-        if subtitles_path:
+        if subtitles_path and use_subs:
             sub_esc = str(subtitles_path).replace("\\", "/").replace(":", "\\:")
             style = "Fontname=Arial,FontSize=24,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=3,Outline=2,MarginV=30"
             filter_complex.append(f"{last_vid}subtitles='{sub_esc}':force_style='{style}'[v_subbed]")
@@ -194,44 +180,47 @@ class Orchestrator:
         
         subprocess.run(cmd1, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
 
-        # Concatenation
-        apply_intro = settings.INTRO_FILE.exists() and use_in
-        apply_outro = settings.OUTRO_FILE.exists() and use_out
-
+        # -----------------------------------------------------
+        # OPTIMIZED CONCATENATION LOGIC USING LISTS
+        # -----------------------------------------------------
+        
         if output_path.exists():
             os.remove(output_path)
 
-        if not apply_intro and not apply_outro:
+        # 3. LIST: Dynamic build of clips sequence
+        clips_to_process = []
+        
+        if settings.INTRO_FILE.exists() and use_in:
+            clips_to_process.append({"file": settings.INTRO_FILE, "type": "intro"})
+            
+        clips_to_process.append({"file": core_path, "type": "main"})
+        
+        if settings.OUTRO_FILE.exists() and use_out:
+            clips_to_process.append({"file": settings.OUTRO_FILE, "type": "outro"})
+
+        # If only main video (no intro/outro), just move it
+        if len(clips_to_process) == 1:
             if core_path.exists(): shutil.move(core_path, output_path)
             return
 
         concat_inputs = ["-y"]
         concat_filter = []
         concat_maps = []
-        n = 0
-
-        if apply_intro:
-            concat_inputs.extend(["-i", str(settings.INTRO_FILE)])
-            concat_filter.append(f"[{n}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v{n}]")
+        
+        for n, clip in enumerate(clips_to_process):
+            path = clip["file"]
+            concat_inputs.extend(["-i", str(path)])
+            
+            if clip["type"] in ["intro", "outro"]:
+                concat_filter.append(f"[{n}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v{n}]")
+            else:
+                concat_filter.append(f"[{n}:v]setsar=1[v{n}]")
+                
             concat_filter.append(f"[{n}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{n}]")
             concat_maps.append(f"[v{n}][a{n}]")
-            n += 1
-
-        concat_inputs.extend(["-i", str(core_path)])
-        concat_filter.append(f"[{n}:v]setsar=1[v{n}]")
-        concat_filter.append(f"[{n}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{n}]")
-        concat_maps.append(f"[v{n}][a{n}]")
-        n += 1
-
-        if apply_outro:
-            concat_inputs.extend(["-i", str(settings.OUTRO_FILE)])
-            concat_filter.append(f"[{n}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v{n}]")
-            concat_filter.append(f"[{n}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{n}]")
-            concat_maps.append(f"[v{n}][a{n}]")
-            n += 1
 
         full_map = "".join(concat_maps)
-        concat_filter.append(f"{full_map}concat=n={n}:v=1:a=1[outv][outa]")
+        concat_filter.append(f"{full_map}concat=n={len(clips_to_process)}:v=1:a=1[outv][outa]")
 
         cmd2 = ["ffmpeg", *concat_inputs, "-filter_complex", ";".join(concat_filter), 
                 "-map", "[outv]", "-map", "[outa]", 

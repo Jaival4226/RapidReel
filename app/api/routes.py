@@ -13,6 +13,15 @@ from app.core.config import settings
 router = APIRouter()
 
 # ==========================================
+# 0. DATA STRUCTURES (Optimization)
+# ==========================================
+
+# 1. SET: Efficient O(1) lookup for validation
+VALID_STYLES = {
+    "cinematic", "anime", "photorealistic", "noir", "cyberpunk"
+}
+
+# ==========================================
 # 1. DATA MODELS
 # ==========================================
 
@@ -24,9 +33,9 @@ class TaskCreate(BaseModel):
     use_watermark: Optional[bool] = False
     use_intro: Optional[bool] = False
     use_outro: Optional[bool] = False
+    use_subtitles: Optional[bool] = True # Added
 
 class RemixPayload(BaseModel):
-    # Data Fields
     prompt: str
     monologue: str
     style: str
@@ -34,8 +43,9 @@ class RemixPayload(BaseModel):
     use_watermark: bool
     use_intro: bool
     use_outro: bool
+    use_subtitles: bool # Added
     
-    # Instruction Flags (The key to the new logic)
+    # Instruction Flags
     regenerate_video: bool 
     regenerate_audio: bool
 
@@ -51,6 +61,7 @@ class TaskSchema(BaseModel):
     use_watermark: Optional[bool] = False
     use_intro: Optional[bool] = False
     use_outro: Optional[bool] = False
+    use_subtitles: Optional[bool] = True # Added
     class Config: from_attributes = True
 
 # ==========================================
@@ -60,6 +71,12 @@ class TaskSchema(BaseModel):
 @router.post("/generate")
 def create_task(req: TaskCreate, bg: BackgroundTasks, db: Session = Depends(get_db)):
     """Start a fresh video generation task."""
+    
+    # Validation using Data Structure (Set)
+    # We don't block invalid styles, but we default them safely without complex if-else chains
+    if req.style not in VALID_STYLES:
+        req.style = "cinematic"
+
     task_id = str(uuid.uuid4())
     new_task = Task(
         id=task_id, 
@@ -70,7 +87,8 @@ def create_task(req: TaskCreate, bg: BackgroundTasks, db: Session = Depends(get_
         status="QUEUED",
         use_watermark=req.use_watermark,
         use_intro=req.use_intro,
-        use_outro=req.use_outro
+        use_outro=req.use_outro,
+        use_subtitles=req.use_subtitles
     )
     try:
         db.add(new_task)
@@ -85,12 +103,12 @@ def create_task(req: TaskCreate, bg: BackgroundTasks, db: Session = Depends(get_
 
 @router.post("/remix/{task_id}")
 def remix_task(task_id: str, req: RemixPayload, bg: BackgroundTasks, db: Session = Depends(get_db)):
-    """Edit an existing task with explicit regeneration flags."""
+    """Edit an existing task."""
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # A. Update Database (Instant Save)
+    # Update Database
     task.prompt = req.prompt
     task.monologue = req.monologue
     task.style = req.style
@@ -98,6 +116,7 @@ def remix_task(task_id: str, req: RemixPayload, bg: BackgroundTasks, db: Session
     task.use_watermark = req.use_watermark
     task.use_intro = req.use_intro
     task.use_outro = req.use_outro
+    task.use_subtitles = req.use_subtitles
     
     task.status = "REMIXING"
     
@@ -108,10 +127,7 @@ def remix_task(task_id: str, req: RemixPayload, bg: BackgroundTasks, db: Session
         db.rollback()
         raise HTTPException(status_code=500, detail=f"DB Update Failed: {e}")
 
-    # B. Trigger Background Job
-    # We pass the flags (req.dict()) so the orchestrator knows what to regenerate.
     bg.add_task(orchestrator.remix_task, task_id, req.dict())
-    
     return {"task_id": task_id, "status": "REMIXING"}
 
 @router.get("/tasks", response_model=List[TaskSchema])
@@ -135,7 +151,8 @@ def get_status(task_id: str, db: Session = Depends(get_db)):
         "is_paid_voice": task.is_paid_voice,
         "use_watermark": task.use_watermark,
         "use_intro": task.use_intro,
-        "use_outro": task.use_outro
+        "use_outro": task.use_outro,
+        "use_subtitles": task.use_subtitles
     }
 
 @router.post("/upload-assets")
@@ -144,25 +161,26 @@ async def upload_brand_assets(
     outro: UploadFile = File(None),
     watermark: UploadFile = File(None)
 ):
-    """Upload branding files to the assets folder."""
+    """Upload branding files using a Dictionary map."""
     try:
         settings.ASSETS_PATH.mkdir(parents=True, exist_ok=True)
         status_msg = []
 
-        if intro:
-            with open(settings.INTRO_FILE, "wb") as buffer:
-                shutil.copyfileobj(intro.file, buffer)
-            status_msg.append("Intro updated")
+        # 2. DICTIONARY: Maps input fields to destination paths
+        # This replaces repetitive 'if x: save x' blocks
+        asset_map = {
+            "intro": {"file": intro, "dest": settings.INTRO_FILE, "msg": "Intro updated"},
+            "outro": {"file": outro, "dest": settings.OUTRO_FILE, "msg": "Outro updated"},
+            "watermark": {"file": watermark, "dest": settings.WATERMARK_FILE, "msg": "Watermark updated"}
+        }
 
-        if outro:
-            with open(settings.OUTRO_FILE, "wb") as buffer:
-                shutil.copyfileobj(outro.file, buffer)
-            status_msg.append("Outro updated")
-
-        if watermark:
-            with open(settings.WATERMARK_FILE, "wb") as buffer:
-                shutil.copyfileobj(watermark.file, buffer)
-            status_msg.append("Watermark updated")
+        # Iterate through dictionary
+        for key, data in asset_map.items():
+            upload_obj = data["file"]
+            if upload_obj:
+                with open(data["dest"], "wb") as buffer:
+                    shutil.copyfileobj(upload_obj.file, buffer)
+                status_msg.append(data["msg"])
 
         if not status_msg:
             return {"message": "No files received."}

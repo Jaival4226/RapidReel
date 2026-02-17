@@ -9,7 +9,7 @@ class Task(Base):
     
     # Inputs
     prompt = Column(String, nullable=False)
-    monologue = Column(String, nullable=True)  # <--- Ensure this exists
+    monologue = Column(String, nullable=True)
     style = Column(String, default="cinematic")
     is_paid_voice = Column(Boolean, default=False)
     
@@ -21,9 +21,11 @@ class Task(Base):
     audio_path = Column(String, nullable=True) # Raw audio
     final_output = Column(String, nullable=True) # Stitched Result
 
+    # Branding Toggles
     use_watermark = Column(Boolean, default=False)
     use_intro = Column(Boolean, default=False)
     use_outro = Column(Boolean, default=False)
+    use_subtitles = Column(Boolean, default=True)  # <--- FIXED: Added missing column
     
     # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
